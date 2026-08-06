@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in the stack isn't working as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please check [`AGENTS.md`](../../AGENTS.md) (Gotchas section) and existing issues — many quirks are already documented there.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands run, config changed, etc.
+      placeholder: |
+        1. `docker compose up -d`
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Output of `docker compose logs -f <service>` or similar. Redact anything sensitive (tokens, vault content, PII).
+      render: shell
+
+  - type: input
+    id: os
+    attributes:
+      label: Host OS
+      placeholder: "macOS 15.x (Docker Desktop) / Linux (distro, kernel) / other"
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Docker / Docker Compose / Ollama versions
+      placeholder: "docker --version / docker compose version / ollama --version"
+
+  - type: textarea
+    id: affected
+    attributes:
+      label: Which service(s) are affected?
+      placeholder: "openwebui, chromadb, mcpo, searxng, searxng-pii-proxy, presidio, open-terminal, ingestion"

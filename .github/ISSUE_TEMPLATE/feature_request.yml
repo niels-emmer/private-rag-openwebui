@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest an improvement or new capability for the stack
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project intentionally stays small and local-first. For anything non-trivial, please describe the use case below so it can be discussed before any implementation work starts (see [`CONTRIBUTING.md`](../../.github/CONTRIBUTING.md)).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that the stack doesn't support today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen? Mention any new services, config, or dependencies this would introduce.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or other approaches you've already tried or ruled out.

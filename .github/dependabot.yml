@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # searxng-pii-proxy's pinned Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/searxng-pii-proxy"
+    schedule:
+      interval: "weekly"
+
+  # ingestion pipeline's pinned Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/ingestion"
+    schedule:
+      interval: "weekly"
+
+  # Base images in service Dockerfiles
+  - package-ecosystem: "docker"
+    directory: "/searxng-pii-proxy"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/ingestion"
+    schedule:
+      interval: "weekly"
+
+  # GitHub Actions workflow versions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
