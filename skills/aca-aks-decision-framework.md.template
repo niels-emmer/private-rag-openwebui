@@ -1,0 +1,47 @@
+Name: aca-aks-decision-framework
+Description: Decision framework for choosing Azure Container Apps vs AKS (vs a mix) for a given workload in a {{CUSTOMER_NAME}} stamp, and the platform-specific networking/identity requirements each choice implies. Use when a new workload needs a compute-platform decision, or reviewing whether an existing choice was justified.
+
+---
+
+# ACA vs AKS decision framework
+
+Source: {{CUSTOMER_NAME}} Knowledge Doc 9 (`09-aca-aks-compute-platforms.md`). Pull the doc via retrieval for exact section references before citing a control.
+
+The customer's environment is confirmed "mostly ACA/AKS" — not exclusively one — so the real task is a documented, consistently-applied decision rule per workload, not picking a single platform for everything.
+
+## 1. Default decision rule
+- **ACA** for simpler, stateless components: frontend, lightweight RAG-orchestration API. Wins on faster iteration, built-in KEDA scaling, lower operational overhead.
+- **AKS** for anything needing Kubernetes-specific capability: complex networking/service mesh, StatefulSets (e.g. a self-hosted vector DB), fine-grained scheduling/node-pool control, or existing platform-team tooling already standardized on AKS.
+- Encode this rule in project documentation so it's applied consistently, not left to "whichever the engineer building that stamp happened to know better." If reviewing a workload's platform choice, check it against this rule and flag if it looks like an ad hoc pick.
+
+## 2. Stamp-to-compute-platform pattern (bigger architectural decision — flag as needing an ADR)
+Three patterns, increasing operational complexity:
+1. **One platform per stamp, by workload shape** (the pragmatic default — §1's rule applied per stamp).
+2. **Every stamp gets both** — more consistent with strict per-stamp isolation, doubles the operational surface (two platforms to patch/monitor/secure per stamp).
+3. **Shared AKS cluster across stamps** (namespace + Network Policy isolation) + **ACA per-stamp** for lighter components — lowest cost, but weakens the blast-radius argument that's the whole reason the stamp pattern exists. **Treat as a cost/isolation trade-off requiring explicit customer sign-off, not a default** — burden of proof is on justifying shared infrastructure, not per-stamp isolation, given DORA resilience-testing evidence favors demonstrable isolation.
+
+If asked to review an architecture that shares a cluster across stamps without an explicit, signed-off rationale, flag it.
+
+## 3. ACA networking requirements (if ACA is chosen)
+- **Workload Profiles (v2) environment required** — Consumption-only (v1) cannot be placed inside the spoke's private networking model at all (no VNet integration, Private Endpoints, UDR, or NAT Gateway egress). Check any existing/proposed ACA environment explicitly targets Workload Profiles, not the legacy default some documentation still shows.
+- Dedicated subnet, minimum `/27` — smaller than legacy v1's `/23`, relevant to subnet planning across many stamps.
+- **Internal-only ingress** as the explicit default in the Terraform module (not something each stamp author has to remember).
+- UDR-forced egress through the hub firewall — confirm it's actually wired, not defaulting to a public internet path (easy to miss when an environment is created without an explicit route table association).
+- Private Endpoints for the environment's management-plane connectivity and any dependent resources (Container Registry, Key Vault).
+
+## 4. AKS networking requirements (if AKS is chosen)
+- **Private cluster** — API server never exposed to the public internet. Table stakes, not a hardening nice-to-have.
+- **Azure CNI Overlay** as the current recommended default (avoids per-pod VNet IP exhaustion across many stamps). Evaluate **Azure CNI Powered by Cilium** specifically if pod-to-pod network policy enforcement within a stamp's node pool is a stated requirement — it should be, per the segmentation-within-the-spoke argument extending to segmentation-within-a-cluster.
+- **Workload Identity** (Entra Workload ID) for pod-to-Azure-resource auth — federated credentials bound to a Kubernetes service account. Never node-level Managed Identity (too broad, every pod on the node inherits it), never a stored credential.
+- **Network Policy** (Calico or Cilium's own) at the pod level if a single cluster hosts multiple stamps' workloads — NSGs alone don't see intra-node-pool pod-to-pod traffic.
+- Built-in **Azure Policy for AKS** initiative enabled, consistent with management-group-level policy inheritance.
+
+## 5. Terraform module implications
+- Compute-platform choice is a parameter/module-selection decision at stamp instantiation (`.tfvars`/root composition) — never baked into one monolithic stamp module with internal ACA/AKS conditionals. Same "avoid `count`/`for_each` gymnastics" guidance as the Terraform migration playbook. Flag a module mixing both via internal branching as a design smell.
+- `azurerm` provider coverage for both is generally mature (unlike some AI Foundry resources needing `azapi`) — but verify current support for less-common configs (specific KEDA scalers, newer Cilium dataplane features) against the provider changelog at implementation time.
+
+## 6. Cross-cutting: databases
+PaaS with Private Link is already covered by the Zero Trust landing-zone baseline (Private Endpoint, Managed Identity/Entra ID auth over connection-string credentials). The one compute-specific tie-in: if a stamp mixes ACA and AKS, the database's Private Endpoint needs to be reachable from **both** compute subnets — test this explicitly, don't assume DNS/routing "just works" across both.
+
+## Output format
+State the recommended platform (or confirm an existing choice), the specific reason from §1/§2, and the networking/identity checklist items from §3 or §4 that apply. If the workload or stamp design isn't fully specified, list what's needed to make the call rather than guessing.

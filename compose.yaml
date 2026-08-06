@@ -1,0 +1,223 @@
+services:
+  chromadb:
+    image: chromadb/chroma:latest@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
+    container_name: chromadb
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    volumes:
+      - chromadb:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    ports:
+      - "127.0.0.1:8001:8000"
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "</dev/tcp/localhost/8000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - owui_net
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main@sha256:6a773e5c3a246b65cbe74ce942b294292c0e5f81c138f703d111bc162f7d7c3d
+    container_name: open-webui
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3042:8080"
+    entrypoint: ["/docker-entrypoint.sh"]
+    command: ["bash", "start.sh"]
+    environment:
+      - GLOBAL_LOG_LEVEL=DEBUG
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - VECTOR_DB=${VECTOR_DB:-chromadb}
+      - CHROMA_HTTP_HOST=${CHROMA_HTTP_HOST:-chromadb}
+      - CHROMA_HTTP_PORT=${CHROMA_HTTP_PORT:-8000}
+      - CHROMA_TENANT=${CHROMA_TENANT:-default_tenant}
+      - CHROMA_DATABASE=${CHROMA_DATABASE:-default_database}
+      - OPEN_TERMINAL_URL=http://open-terminal:8000
+      - ENABLE_RAG_WEB_SEARCH=${ENABLE_RAG_WEB_SEARCH:-true}
+    secrets:
+      - webui_secret_key
+      - hf_token
+    volumes:
+      - open-webui:/app/backend/data
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - owui_net
+
+  mcpo:
+    image: ghcr.io/open-webui/mcpo:main@sha256:1e82c9555c19e50b80745705f32b47a2647589f35279527b5118ecd3a71bd467
+    container_name: mcpo
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    entrypoint: ["/docker-entrypoint.sh"]
+    command: ["sh", "-c", "mcpo --host 0.0.0.0 --port 8000 --config /app/config.json --api-key \"$$MCPO_API_KEY\""]
+    ports:
+      - "127.0.0.1:8002:8000"
+    secrets:
+      - mcpo_api_key
+    volumes:
+      - ./mcpo_config.json:/app/config.json:ro
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - ${VAULT_HOST_PATH}:/vault:ro
+      - .:/docker/openwebui:ro
+      - mcpo-memory:/data
+    networks:
+      - owui_net
+
+  # Isolated on searxng_internal only — not reachable from mcpo/web_fetch or
+  # any other service. All queries must go through searxng-pii-proxy, which
+  # is the only other service on this network. See AGENTS.md "Security".
+  searxng:
+    image: searxng/searxng:latest@sha256:77a4f1013b9e2ba857b360dcfea68bc10b3cc5f63572f3d7861cc323cba22c16
+    container_name: searxng
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    ports:
+      - "127.0.0.1:3044:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:3044
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    networks:
+      - searxng_internal
+
+  # TODO: pin to a specific sha256 digest (resolve via `docker pull` +
+  # `docker inspect`), matching every other image in this file.
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    container_name: presidio-analyzer
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1500m
+    networks:
+      - owui_net
+
+  # TODO: pin to a specific sha256 digest, same as presidio-analyzer above.
+  presidio-anonymizer:
+    image: mcr.microsoft.com/presidio-anonymizer:latest
+    container_name: presidio-anonymizer
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    networks:
+      - owui_net
+
+  # Redacts PII from search queries via Presidio before forwarding to the
+  # network-isolated searxng service. OpenWebUI's DB-backed web-search URL
+  # must be repointed at this service — see AGENTS.md. Dual-homed: owui_net
+  # to be reachable by openwebui, searxng_internal to reach searxng.
+  searxng-pii-proxy:
+    build: ./searxng-pii-proxy
+    container_name: searxng-pii-proxy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    depends_on:
+      - searxng
+      - presidio-analyzer
+      - presidio-anonymizer
+    ports:
+      - "127.0.0.1:3045:8080"
+    environment:
+      - PRESIDIO_ANALYZER_URL=http://presidio-analyzer:3000
+      - PRESIDIO_ANONYMIZER_URL=http://presidio-anonymizer:3000
+      - SEARXNG_URL=http://searxng:8080
+    networks:
+      - owui_net
+      - searxng_internal
+
+  open-terminal:
+    image: ghcr.io/open-webui/open-terminal:slim@sha256:472630aa110cda85a4898a4e037b582c8deeb71ab1e91df324a0e78b6c9a47cc
+    container_name: open-terminal
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    depends_on:
+      openwebui:
+        condition: service_healthy
+    entrypoint: ["/docker-entrypoint.sh"]
+    command: ["/usr/bin/tini", "--", "/app/entrypoint-slim.sh", "run"]
+    ports:
+      - "127.0.0.1:3043:8000"
+    secrets:
+      - open_terminal_api_key
+    volumes:
+      - open-terminal:/home/user
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    networks:
+      - owui_net
+
+  ingestion:
+    profiles: ["ingestion"]
+    build: ./ingestion
+    container_name: ingestion
+    volumes:
+      - ${VAULT_HOST_PATH}:/vault:ro
+    environment:
+      - VAULT_PATH=/vault
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - EMBED_MODEL=nomic-embed-text
+      - COLLECTION=second_brain
+    networks:
+      - owui_net
+
+volumes:
+  chromadb:
+  open-webui:
+  open-terminal:
+  mcpo-memory:
+
+secrets:
+  webui_secret_key:
+    file: ./secrets/webui_secret_key
+  hf_token:
+    file: ./secrets/hf_token
+  open_terminal_api_key:
+    file: ./secrets/open_terminal_api_key
+  mcpo_api_key:
+    file: ./secrets/mcpo_api_key
+
+networks:
+  owui_net:
+  # Isolated network — only searxng and searxng-pii-proxy join this, so
+  # searxng is unreachable from mcpo/web_fetch or any other service.
+  searxng_internal:

@@ -1,0 +1,52 @@
+Name: devops-pipeline-review
+Description: Checklist for reviewing or designing the Terraform CI/CD pipeline for {{CUSTOMER_NAME}}'s stamp-based spokes (Azure DevOps or GitHub Actions) — stages, approval gates, secrets handling, and what "simplification" should concretely deliver. Use when reviewing a pipeline definition or being asked to design one.
+
+---
+
+# DevOps pipeline review
+
+Source: {{CUSTOMER_NAME}} Knowledge Doc 3 (`03-devops-pipeline-design-terraform-azure.md`). Pull the doc via retrieval for exact section references before citing a control.
+
+## 0. Diagnose before redesigning
+If asked to "simplify" a pipeline, first identify which of these actually causes the complexity — don't assume Terraform alone fixes any of them, and don't propose a full rebuild before this is done:
+- **Template sprawl** (forked Bicep/HCL per environment instead of parameterized modules) — a modularization problem, not a tool problem. Terraform inherits it if the migration just transliterates the same structure with `count` loops.
+- **Pipeline sprawl** (one YAML pipeline per environment/spoke instead of one parameterized template) — orthogonal to the IaC tool.
+- **Manual approval gate proliferation** — a governance-process question for the customer's change-management function, not something an IaC tool reduces. Possible fix: pre-approve a "safe change" category for reviewed-module stamp deployments.
+- **State/deployment coupling** (full-stack redeploys for small changes) — Terraform's plan/targeted-apply model helps, but only if module boundaries are drawn correctly (see `bicep-terraform-migration-playbook` §4).
+
+Cite the specific complexity source per pipeline being reviewed, and match the fix to it.
+
+## 1. Target pipeline shape — check each stage is present and correctly ordered
+1. **Validate**: `terraform fmt -check`, `terraform validate`, plus `tflint` and `checkov`/`tfsec` security-misconfig scanning — non-negotiable for a bank (catches public-exposed storage, missing encryption, overly broad NSG rules before `plan`).
+2. **Plan**: output saved as an artifact, not re-computed at apply time — apply must use the exact reviewed plan (avoids TOCTOU drift between review and execution). Flag any pipeline that re-plans at apply time.
+3. **Policy gate**: automated policy-as-code check (OPA/Conftest against plan JSON, or Azure Policy what-if) plus a human approval gate scoped to the specific stamp/environment — production approval distinct from dev/test.
+4. **Apply**: OIDC federated auth (`ARM_USE_OIDC`), against the correct isolated state backend for that stamp.
+5. **Post-apply verification**: smoke tests (health endpoint, RAG ingestion reachability, Key Vault access from the workload identity) plus a compliance/tag scan before marking success.
+6. **Drift-detect job** (separate, scheduled): nightly/weekly plan-only run per stamp, alerting on unexpected diff.
+
+**Parameterization check**: one pipeline template instantiated per stamp via a matrix/parameter file (stamp ID, environment, subscription, capacity tier) — not one pipeline definition per stamp. This is the actual mechanism for "simplification." Flag any per-stamp pipeline duplication.
+
+## 2. Environment promotion model
+- Favor genuinely separate stamps per dev/test/prod (not shared infrastructure with environment tags) — keeps the blast-radius and data-classification story intact, and gives a clean security-review answer: "production RAG data never resides in infrastructure non-production pipelines/identities can reach."
+- Promotion gate is a **pinned module version** (git tag/semver) validated in dev, then the *same* version applied to test, then prod — never re-authored per environment. Divergence between environments limited to `.tfvars` values (sizing, classification, feature flags), not module logic forks. Flag any environment-specific module logic branch.
+
+## 3. GitOps vs. pipeline-triggered apply
+Default recommendation: **pipeline-triggered (push-based)** for a first migration phase — simpler, matches how Bicep pipelines likely already work (lower change-management friction), reuses existing approval-gate tooling. GitOps (pull-based) offers stronger drift self-healing but introduces new infrastructure needing its own security review/identity/lifecycle — net-additive complexity for a bank that hasn't run GitOps for infra before. Defer it; use pipeline-triggered apply + the scheduled drift-detect job as the pragmatic middle ground. Flag a GitOps proposal as premature unless there's a stated reason it's needed now.
+
+## 4. Secrets and approval workflow
+- No long-lived secrets in pipeline variable groups for Azure auth (OIDC, per the migration playbook).
+- Application-level secrets sourced from Key Vault at deploy time, never hardcoded in `.tfvars` committed to the repo.
+- Repo secret-scanning (`gitleaks` or equivalent) as a standing CI gate — cheap, high-value, worth checking is actually present.
+- Production apply approval: a named, role-scoped approver group, logged — the author should generally not be the sole approver (segregation of duties).
+
+## 5. Pipeline observability
+Pipeline run outcomes (plan/apply, who approved what, duration, failure rate) feed the same central SIEM as workload observability — DORA's ICT change management and incident reporting expectations extend to the pipeline itself as an ICT system, not just the running application. If the CI platform has an audit log export, confirm it's wired to the central SIEM rather than siloed in the CI platform's own UI.
+
+## 6. Platform choice: Azure DevOps vs GitHub Actions (if not yet confirmed)
+Don't build the pipeline template twice on spec — ask which platform is standard or being migrated to. If genuinely undecided, prototype against whichever platform hosts the current Bicep pipelines (reuses existing agents/runners/network paths); treat a later platform migration as separately scoped work, not a blocker. Mechanics differ enough to matter once building: ADO uses Workload Identity Federation service connections + Environments + YAML `extends`/`template`; GitHub Actions uses repo/branch/environment-scoped OIDC federated credentials (more granular subject-claim control) + Environments + reusable `workflow_call` — and for GitHub specifically, check Enterprise/Advanced Security licensing and runner network-egress implications for a bank with strict egress controls before assuming it's a drop-in choice.
+
+## 7. What "simplification" should concretely deliver — use as review criteria, not just goals
+Time-to-deploy-a-new-stamp (measured, not claimed); number of distinct pipeline definitions reduced via templating; standing secrets eliminated (OIDC) as a citable audit-cycle improvement; drift window bounded by the scheduled detection job (a stated max-N-days metric); rollback time per stamp, demonstrated and measured — DORA operational resilience testing expects evidence, not a claim.
+
+## Output format
+If reviewing an existing pipeline: check each stage in §1 is present in the right order, flag missing stages or ordering violations, and check against §2–§6 for the specific anti-patterns called out. If designing one from scratch: produce the stage list with the specific tool/mechanism per stage, not generic CI advice.

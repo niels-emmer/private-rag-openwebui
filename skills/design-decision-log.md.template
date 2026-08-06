@@ -1,0 +1,32 @@
+Name: design-decision-log
+Description: The user's established lightweight format for capturing architecture/design decisions during an engagement — a numbered decision list plus an open-questions section, not a formal ADR document. Use when asked to draft, update, or add to a design-decisions log for the {{CUSTOMER_NAME}} engagement.
+
+---
+
+# Design decision log
+
+House style, observed in other engagements (e.g. `16. Design Decisions.md`), not a formal template — deliberately terse. Don't inflate it into a heavyweight ADR document (context/decision/consequences prose per entry) unless the user explicitly asks for that instead.
+
+## Format
+
+1. **Decisions**: a flat numbered list. Each item is a settled fact or choice, stated in one line — no justification prose unless the reasoning itself isn't obvious from context. State the decision, not the discussion that led to it.
+
+   Example shape:
+   ```
+   1. Project name (suggested): `rag-svc-iac`
+   2. A single subscription: `AI Innovation Lab` with ID `<sub-id>`
+   3. A `hub` VNET with centralised (ingress/...) resources
+   4. Two spoke VNETs for `dev` and `prod` resources
+   5. Terraform will be used for all IAC, except for:
+       1. Storage account used for TFstate (separate containers for dev and prod)
+       2. Model Service AI foundry (out of scope, to be provided w/ endpoint)
+   ```
+   Nested sub-items are fine for a decision with named exceptions — keep the exceptions as sub-bullets under the parent decision rather than separate top-level numbers.
+
+2. **`Q:`**: a second numbered list of genuinely open questions — things not yet decided, phrased as questions, not answers. Group related questions under a short bold sub-heading if there are several on one topic (e.g. "Resource groups:", "Billing/monitoring:", "Connections:"). Don't answer these in the same document — they're a punch list for the next conversation with the customer, not something to resolve unilaterally.
+
+## When to use this vs. `regulatory-impact-triage` or a review skill
+This skill is for *recording* a decision once made or *listing* what's still open — it's a capture format, not an analysis tool. If the user is asking you to evaluate whether a decision is sound, use the relevant review skill (`zero-trust-landing-zone-review`, `aca-aks-decision-framework`, etc.) and only write the result into this log format if asked to record the outcome.
+
+## Output format
+Produce exactly the two-list shape above — numbered decisions, then `Q:` with numbered open questions. No headers, no prose paragraphs, no summary at the end. If updating an existing log, append new decisions/questions rather than restating the whole document.

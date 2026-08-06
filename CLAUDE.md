@@ -1,0 +1,1 @@
+This project's agent instructions live in [`AGENTS.md`](./AGENTS.md) — read it for architecture, commands, gotchas, and the maintenance rule. It's kept tool-agnostic so both Claude Code and OpenCode work well from it; put any Claude Code–specific configuration (permissions, hooks) in `.claude/settings.local.json` instead of here.

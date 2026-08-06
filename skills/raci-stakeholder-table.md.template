@@ -1,0 +1,28 @@
+Name: raci-stakeholder-table
+Description: The user's established RACI table format, including the scope-isolation and dual-track (governance vs platform-engineering) analysis that follows it. Use when asked to produce or update a RACI matrix for the {{CUSTOMER_NAME}} engagement.
+
+---
+
+# RACI / stakeholder table
+
+House style, observed in other engagements (e.g. `2. RACI.md`). A RACI here is never just the table — it comes with a scope-isolation section and a strategic read on what the table implies. Produce all three parts unless the user explicitly asks for just the table.
+
+## Structure
+
+**1. Preamble** — one short paragraph naming the parties and the source the role split is based on (a SoW, a kickoff doc, a prior conversation), then the RACI legend:
+- **R** Responsible (executes)
+- **A** Accountable (final responsibility)
+- **C** Consulted
+- **I** Informed
+
+**2. The matrix** — markdown table, work packages/components as rows, parties as columns. Use combined `A/R` where the same party both owns and executes an item (common and fine — don't force them into separate rows). Keep work-package names concrete and specific to actual deliverables, not generic phase names.
+
+**3. "Belangrijk voor de offerte" / scope isolation** — explicitly separate what falls under the consultancy's (Rockstars/the user's) scope from what doesn't, as two short bullet lists: **primary scope** and **out of scope**. State plainly why this separation matters — typically to avoid implicitly inheriting a compliance/governance responsibility (e.g. AI Act compliance) that contractually sits with the client or another named party. This section is not optional decoration — it is the actual point of producing the RACI in a consultancy engagement: making liability boundaries explicit for the proposal/contract conversation.
+
+**4. Strategic observation** — a short closing paragraph naming the "tracks" the RACI reveals (e.g. a governance/compliance track vs. a platform-engineering track) and what that separation means practically (e.g. "the platform implementation can start independently of most of the governance track"). This is the payoff insight, not a summary — say something the table alone doesn't make obvious.
+
+## Language
+Match the language of the surrounding conversation/document — the reference example is in Dutch because that engagement's stakeholders were Dutch-speaking; produce it in whichever language fits the current audience.
+
+## Output format
+All four sections, in order, using `---` horizontal rules between them as in the reference. Don't add a fifth "summary" section — the strategic observation already closes it.

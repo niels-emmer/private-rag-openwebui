@@ -1,0 +1,44 @@
+Name: genai-ai-foundry-security-review
+Description: OWASP-LLM-mapped security and governance review checklist for {{CUSTOMER_NAME}}'s production GenAI chatbot, hosted on Azure AI Foundry with ACA/AKS compute. Use when reviewing the LLM/RAG layer specifically, not general infrastructure (see zero-trust-landing-zone-review for that).
+
+---
+
+# GenAI / AI Foundry security review
+
+Source: {{CUSTOMER_NAME}} Knowledge Docs 5 (`05-genai-llm-security-eu-ai-act.md`) and 8 (`08-azure-ai-foundry-architecture-security.md`). Pull the actual docs via retrieval for exact wording before citing a control.
+
+**Scope check first**: this checklist is for the client's production architecture — **Azure AI Foundry** (Private Link-connected, model layer) with **ACA/AKS** compute (see `aca-aks-decision-framework`). Doc 7 (Ollama/local LLM) describes the user's own personal tooling, not {{CUSTOMER_NAME}}'s production system — do not apply Doc 7's controls to a question about the client's chatbot unless the question is specifically about the self-hosted exit-strategy/fallback scenario (Doc 4 §5).
+
+## 1. OWASP LLM Top 10 — walk every proposed change or review request through the ones that apply
+
+| Risk | What to check |
+|---|---|
+| LLM01 Prompt injection | Retrieved RAG content delimited and treated as data, not instructions, in the system prompt. Indirect injection via a poisoned ingested document is the higher-priority variant here — check the ingestion review gate (LLM04), not just the direct-input case. |
+| LLM02 Sensitive information disclosure | **The single most important one for this project.** Retrieval filtered by the querying user's actual authorization at query time, enforced at the vector-store layer — not "the model won't volunteer it." If the vector DB doesn't support per-document ACLs natively, that's a gap needing a retrieval-orchestration-layer fix, not a config toggle. |
+| LLM03 Supply chain | Exact model name/version pinned in the Foundry deployment config (Foundry retires/upgrades on Microsoft's schedule, not the bank's — see §3 below). Model provider's card/terms reviewed in the Foundry catalog even for non-Microsoft models. |
+| LLM04 Data/model poisoning | RAG-corpus poisoning is the relevant variant (not training-time). Ingestion pipeline has an integrity/review gate for new documents, with a version/audit trail so a poisoning incident is traceable to its ingestion event. |
+| LLM05 Improper output handling | Any future agentic extension (model triggers an action, generates a query, produces rendered HTML/Markdown) treated as untrusted output requiring full validation downstream. |
+| LLM06 Excessive agency | Current scope is Q&A-only, low-agency by design — flag this explicitly as a preserved security asset. Any roadmap item adding tool use/write access triggers a fresh threat-model review before being built, not an incremental feature. |
+| LLM07 System prompt leakage | Assume determined users can extract it. The control is "don't put anything in the system prompt you wouldn't accept being disclosed," not reliance on the model keeping it secret. |
+| LLM08 Vector/embedding weaknesses | Vector store behind the same network segmentation and identity controls as any sensitive data store (Private Endpoint, Managed Identity, no public exposure — see `zero-trust-landing-zone-review`), not treated as "just an index." |
+| LLM09 Misinformation | Citations/source links surfaced in the UI so users can verify. Ties to EU AI Act Article 50 transparency — see `regulatory-impact-triage`. |
+| LLM10 Unbounded consumption | On Foundry: per-deployment TPM/RPM quotas and provisioned-throughput sizing set deliberately per stamp, not shared/default (shared quota reintroduces the noisy-neighbor problem stamps are meant to prevent). Rate limiting at the gateway layer per user regardless. |
+
+## 2. Foundry-specific checks (beyond OWASP)
+
+- **Resource variant**: confirm whether the deployment is Foundry classic (hub/project) or the newer unified Foundry resource — materially affects Terraform authoring and network config. Don't assume.
+- **Deployment type and data residency**: confirm which serverless/managed-compute variant backs the chatbot. **Global** deployment types can route outside the EU — verify **Data Zone** or **Regional** is actually in use for GDPR/DORA data-location compliance; don't infer "probably fine, it's Azure."
+- **Modified Abuse Monitoring**: by default Foundry logs prompts/completions for abuse monitoring with potential human review — very likely incompatible with confidential bank data flowing through RAG. Confirm whether {{CUSTOMER_NAME}} has applied for and been granted the Limited Access opt-out for the relevant subscription. If not, this is an explicit action item to raise with compliance/legal, not an assumption to wave past. Note the trade-off if disabled: the bank's own Doc 5/6 controls become more load-bearing for misuse detection since Microsoft-side human review goes away.
+- **Auth**: Entra ID/Managed Identity for the data plane, not API keys.
+- **Terraform gotcha**: `azurerm_ai_services` doesn't fully cover project management, Foundry Agent Service network injection, or bring-your-own-storage — those need `azapi`. Expect `azurerm` + `azapi` coexisting in the same module; comment each resource's provider choice so it doesn't read as inconsistency to a future reviewer.
+- **Model lifecycle**: Foundry auto-upgrades/retires model versions on Microsoft's schedule. Confirm someone is tracking retirement notices as an input to the change-management process (Doc 5 §3), not discovering a behavior change after the fact.
+- **Outsourcing register**: Foundry as a distinct managed AI service may need its own DORA ICT third-party register / EBA outsourcing-arrangements entry beyond generic Azure IaaS/PaaS coverage — raise as a named action item with compliance, don't assume existing Azure approval covers it.
+
+## 3. Model governance (applies regardless of hosting detail)
+
+- Internal model card maintained: version, training-data summary, known limitations, intended use (internal Q&A) and explicit out-of-scope uses (not customer-facing, not HR/credit decisions).
+- Kill-switch: tested runbook for disabling a stamp or the whole chatbot quickly — validated, not assumed capability. Ties to DORA resilience testing.
+- Model/prompt/retrieval-logic changes go through the same change-management rigor as infrastructure changes — these are compliance-relevant behavior changes under both AI Act transparency obligations and DORA ICT change management, not casual config tweaks.
+
+## Output format
+Findings as: control → present/verified/absent → concrete remediation or the specific open question to raise with the customer if it can't be verified from what's retrievable. The "Open Questions to Resolve With the Customer" list in Doc 8 is a good model for phrasing anything genuinely unconfirmed — state it as a question to the client, not a guessed answer.

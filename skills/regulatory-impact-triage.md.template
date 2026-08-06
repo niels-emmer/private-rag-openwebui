@@ -1,0 +1,43 @@
+Name: regulatory-impact-triage
+Description: Walks a proposed architecture, data, or process change through DORA/NIS2/EU AI Act/GDPR/DNB/EBA applicability for the {{CUSTOMER_NAME}} engagement, producing an applicability verdict and the evidence/documentation that needs to start now. Use before finalizing any design decision that touches new data flows, new third-party dependencies, or a change to the chatbot's use case.
+
+---
+
+# Regulatory impact triage
+
+Source: {{CUSTOMER_NAME}} Knowledge Doc 4 (`04-nl-eu-banking-regulatory-landscape.md`). This is engineering context, not legal advice — always say so, and flag genuinely unconfirmed interpretations as questions for the customer's compliance/legal function rather than answering them as settled fact. Regulatory timelines in this space have moved multiple times through 2025–2026; don't assert a date without pulling the doc.
+
+Run every proposed change through these checks. Most changes will only trigger one or two — don't force all six every time.
+
+## 1. DORA (in force since 17 Jan 2025 — already applicable, not a future deadline)
+- Does this change touch a system/process that needs to slot into the board-approved ICT risk management framework (architecture diagrams, module docs, state-backend controls)? → produce the artifact as part of the change, not after.
+- Does this introduce a **new third-party ICT dependency** (a new SaaS tool, hosted backend, external API)? → that needs a register-of-information entry and criticality/concentration-risk assessment. Flag as a compliance action item, not just an engineering choice.
+- Does this change affect resilience-testing evidence (stamp failure isolation, ability to rebuild a stamp without affecting others)? → note it as resilience-testing evidence if so.
+- Could this change be involved in a major-incident scenario? → confirm the observability/logging design still supports fast incident classification and timeline reconstruction for the changed component.
+
+## 2. NIS2 / Cyberbeveiligingswet (in force 15 Aug 2026, zero transition period)
+- Does the change touch a "network and information system" supporting the bank's operations (infrastructure, pipeline, the chatbot itself)? → in scope.
+- Does it pull in a new external Terraform module source, container base image, or model weights from a public registry? → NIS2 supply-chain obligation: pin and vet the source, don't treat as generic hygiene only.
+- Given zero transition period, treat any deliverable as needing to already reflect NIS2-aligned practice by the in-force date — don't plan a "remediate later" phase for anything landing near or after 15 Aug 2026.
+
+## 3. EU AI Act
+- **Article 50 transparency** (effective 2 Aug 2026): does the change affect user-facing disclosure that they're interacting with an AI system? Internal/"obvious from context" exemptions exist but must not be assumed — if claimed, the basis must be documented and confirmed with legal/compliance.
+- **High-risk classification** (Annex III, now Dec 2027 per the 2026 Omnibus amendments): does this change extend the chatbot's use case toward HR decisions, credit-related processes, or customer-facing financial advice? **Use-case creep is the realistic path to accidentally crossing into high-risk territory** — a "helpful internal chatbot" quietly pointed at higher-stakes queries. If the change is any kind of scope expansion, explicitly flag this and recommend the use-case review gate re-run, don't assume the original low-risk classification still holds.
+- Regardless of risk tier: does the change affect what's logged/retained about model inputs/outputs, or human-oversight/kill-switch capability? These apply even at "not high-risk."
+
+## 4. GDPR / AVG
+- Does the change add new documents/data sources to the RAG ingestion pipeline? → review for personal data *before* ingestion, not reactively. HR documents, customer correspondence, or similar → needs its own DPIA coordinated with the DPO before ingestion, not after.
+- Does it cross a stamp/data-classification boundary (data ingested for one business unit's store becoming queryable by another)? → purpose-limitation violation, flag directly.
+- Does it involve deleting personal data that may be embedded in a vector store? → note this is a known hard problem (embeddings need re-indexing, not a soft-delete flag) and route to the DPO explicitly rather than assuming standard erasure tooling covers it.
+- Does it change where data physically flows (region, any external model API call)? → cross-border data flow check.
+
+## 5. DNB supervisory expectations
+- Does the change materially alter the outsourcing arrangement's scope (e.g., a materially different architecture vs. what was originally filed)? → don't assume no new DNB notification is needed; flag as a question for compliance.
+- Does the change touch the AI Foundry dependency specifically? → this is the concentration-risk-relevant component (Microsoft-hosted, SaaS) — any change here should reference the outsourcing-register/criticality-assessment position and the documented exit strategy (portability to a different model backend, including the self-hosted Doc 7 pattern as a documented option, not the primary architecture).
+
+## 6. EBA outsourcing guidelines
+- Does the change affect a critical/important outsourced function? → confirm register-of-outsourcing-arrangements entry exists/is updated, with risk assessment and exit strategy. A well-modularized, portable Terraform codebase is itself exit-strategy evidence — note this if the change affects module portability either way.
+- Flag if the change might need ECB-level (not just DNB-level) sign-off — relevant if {{CUSTOMER_NAME}} falls under ECB direct supervision as a significant institution.
+
+## Output format
+A short verdict per applicable framework: **Applies / Doesn't apply / Needs customer confirmation**, plus the specific artifact or documentation to start now (register entry, DPIA, use-case review, architecture diagram update). Don't produce a wall of regulatory prose — the point is an actionable checklist, not a legal memo. End with an explicit list of anything that needs the customer's compliance/legal function to confirm rather than being answered here.

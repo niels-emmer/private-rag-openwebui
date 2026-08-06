@@ -1,0 +1,54 @@
+Name: bicep-terraform-migration-playbook
+Description: Step-by-step execution playbook for migrating {{CUSTOMER_NAME}} spoke infrastructure from Bicep to Terraform without disrupting the hub or causing drift/downtime in the chatbot workload. Use when planning or reviewing a specific migration step, not for general IaC questions.
+
+---
+
+# Bicep → Terraform migration playbook
+
+Source: {{CUSTOMER_NAME}} Knowledge Doc 2 (`02-bicep-to-terraform-migration.md`). Pull the doc via retrieval for exact section references before citing a control.
+
+**Core mental model to state up front when relevant**: Bicep/ARM is stateless (the live resource graph *is* the state); Terraform is stateful (a state file is a separate source of truth that can drift from reality). This is the actual risk shift, not syntax translation — every recommendation below follows from it.
+
+## 1. Ownership rule (non-negotiable)
+Every Azure resource has exactly one IaC tool of record at any point in time. Bicep and Terraform never manage the same resource concurrently. Mixed ownership (Bicep owns a VNet, Terraform owns subnets inside it) is a temporary transition state only, never a target architecture — if a proposal treats it as permanent, push back.
+
+## 2. Choose the import strategy per resource layer
+Three approaches; **default recommendation is (c), hybrid**:
+
+- **(a) `terraform import` / import blocks** — for stable, rarely-changed foundational resources (VNets, subnets, base Key Vaults). After import: validate with `terraform plan` and confirm **zero diff**. Any diff means the HCL doesn't accurately describe the resource — budget real time for this reconciliation (implicit/computed properties, az/ARM vs. `azurerm` provider default mismatches are common).
+- **(b) Rebuild fresh in a new stamp, cut over, decommission old** — for workload-layer resources being re-architected into the stamp pattern anyway. No import value if the target shape differs from the source shape. Higher short-term cost (parallel infra during transition), lower long-term technical debt.
+- **(c) Hybrid** — import network/foundation resources (a), rebuild workload resources fresh per stamp (b). This is the pragmatic default: minimizes churn on the resources security reviewers care most about matching exactly, while letting the workload layer get a clean stamp-based design.
+
+## 3. State backend setup (a security control, not an implementation detail)
+- Azure Storage Account, blob-level state, `use_azuread_auth = true` — Entra ID RBAC governs state access, not storage account keys/SAS tokens.
+- Blob versioning + soft delete enabled on the state container (rollback path for a corrupted apply).
+- **One state per stamp** (per Doc 1) — never one state spanning multiple stamps, or the blast-radius problem the stamp pattern exists to solve comes right back.
+- Locking via Azure Storage native blob leasing. Confirm CI runners respect lock timeouts and don't default to force-unlock on failure — force-unlock should be a deliberate, logged, human-approved action.
+- Encryption: storage-account-level encryption at rest (CMK if that's the bank's standard) + strict RBAC on the state container is the real control — `sensitive` in Terraform outputs only affects CLI/log output, not the state file itself, don't rely on it.
+- Never pass real secrets as Terraform variables (`-var="db_password=..."` pattern). Use Key Vault references / provider-native secret generation instead. Scan repo history for Bicep-era `.parameters.json` files that may have leaked secrets to source control before migration — flag any findings.
+
+## 4. Module structure (mirror stamp boundaries, don't recreate Bicep's sprawl)
+- **Foundation module** (per spoke, rarely changes): VNet, subnets, route tables, NSG shells, hub peering as a data source (not a resource), diagnostic settings baseline.
+- **Stamp module** (once per stamp): compute, RAG storage, Key Vault, Managed Identity, stamp-scoped monitoring — parameterized by `stamp_id`, `data_classification`, `capacity_tier`.
+- **Policy/guardrail module** (optional): spoke-local policy assignments not already inherited from management-group Azure Policy.
+- Prefer explicit `.tfvars` per stamp over conditional logic branching module behavior. Bicep's `if`/`for` flexibility on a single template is usually exactly what produced the sprawl the customer wants simplified — resist rebuilding that with `count`/`for_each` gymnastics in HCL. If a proposed module has heavy conditional branching, flag it as a design smell.
+
+## 5. Drift detection (an ongoing process, not a one-time migration step)
+- Scheduled `terraform plan` (read-only) in CI on a cadence (e.g. nightly), output surfaced to the team. Auto-*detection* with alerting is the right default; auto-remediation without human review is a risk to flag if proposed.
+- Azure Policy `deployIfNotExists`/`modify` effects are expected, legitimate "drift" — reconcile by declaring the policy-mandated state explicitly in the Terraform module (so `plan` shows no diff), not by fighting the policy engine every run.
+- Emergency out-of-band changes (Portal hotfix during an incident) need a defined "reconcile within N business days" process — undocumented drift is a DORA change-management audit finding waiting to happen.
+
+## 6. Provider authentication
+Workload Identity Federation (OIDC), not long-lived service principal secrets. `ARM_USE_OIDC=true` (or Terraform Cloud's `TFC_AZURE_PROVIDER_AUTH`/`TFC_AZURE_RUN_CLIENT_ID`), not `ARM_CLIENT_SECRET` in pipeline variable groups. Worth stating explicitly to the customer as a concrete security improvement the migration delivers, not just a tooling swap — removes a standing-secret class of risk classic Bicep pipelines likely still carry.
+
+## 7. Cutover and rollback sequence (per stamp)
+1. Deploy new Terraform-managed stamp alongside the existing Bicep-managed spoke.
+2. Validate: smoke tests, security scan, policy compliance check.
+3. Cut traffic at the routing layer.
+4. Bake period.
+5. Decommission the Bicep-managed equivalent — only after bake + sign-off.
+
+Archive (don't delete) the Bicep template and its last-known-good parameters for a defined retention period as the rollback path. Don't delete Bicep state/deployment history prematurely — "can we prove what was deployed and when, before and after migration" is an audit question in a regulated environment; both toolchains' history should stay queryable.
+
+## Output format
+If asked to review a migration step or PR: check it against the relevant section above and flag the specific violation (e.g. "this imports a workload resource that's being re-architected — use (b), not (a)" or "this state backend config is missing `use_azuread_auth`"). If asked to plan a step, produce the sequence, not just principles.

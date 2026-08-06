@@ -1,0 +1,51 @@
+Name: zero-trust-landing-zone-review
+Description: Checklist for reviewing a proposed change to a {{CUSTOMER_NAME}} landing-zone spoke/stamp (new resource, subnet, service, or workload) against the established Zero Trust security baseline. Use when the user asks you to review, sanity-check, or sign off on an architecture or infrastructure change.
+
+---
+
+# Zero Trust landing-zone review
+
+Source: {{CUSTOMER_NAME}} Knowledge Doc 6 (`06-azure-security-baseline-regulated-spokes.md`). This is the intra-spoke control set — the hub already provides perimeter/inspection (firewall, DDoS, ExpressRoute/VPN); everything below is the spoke team's own responsibility.
+
+Pull the relevant doc(s) via retrieval for exact wording/section references before citing a control — this skill is the checklist shape, Doc 6 (and Docs 1, 8, 9 for platform specifics) is the source of truth.
+
+Walk every proposed change through these six sections. Don't just ask "is this present" — ask "is this *proven*, not assumed" where noted; several of these are commonly claimed-but-unverified.
+
+## 1. Network segmentation
+- Subnet-per-stamp, NSG-per-subnet, default-deny with explicit allow rules only for a documented traffic matrix (not organically grown rules).
+- No direct internet egress from workload subnets — egress forced through the hub firewall via UDR. If the change introduces any new outbound dependency (a container image with a telemetry phone-home, an SDK default), confirm it's actually blocked, don't assume the firewall rule set already covers it.
+- Private Endpoints for every PaaS dependency (storage, Key Vault, vector store, container registry) — no public endpoint exposure. **Test it**: attempt to reach the resource's public endpoint and confirm it's blocked, rather than trusting policy intent (exemptions can exist upstream).
+
+## 2. Identity and access
+- Managed Identity (user-assigned, per stamp) for all workload-to-Azure-resource auth — never a service principal secret.
+- RBAC at the narrowest scope that works (resource/resource-group, not subscription). Flag any `Contributor`/`Owner` assignment on a pipeline or workload identity as a finding, not a default.
+- PIM/Conditional Access for human access — standing "Owner" access is a finding. Confirm it's actually applied to whatever new resource groups this change creates, don't assume inheritance.
+- If the change touches a CI/CD identity: what can the OIDC-federated pipeline identity actually do, and is that scope on the same access-recertification cadence as human accounts?
+
+## 3. Secrets and key management
+- Key Vault per stamp, Private Endpoint only, RBAC-based access policy (not the legacy access-policy model).
+- Secrets are *generated into* Key Vault (via Terraform Key Vault secret resources or a separate generation step), never *passed through* Terraform from an external plaintext source — check this doesn't leave a secret in state.
+- Customer-managed keys: only if that's already {{CUSTOMER_NAME}}'s standard for this data classification — don't apply CMK uniformly without a stated reason (it adds real operational overhead).
+
+## 4. Data protection
+- Encryption at rest (confirm not disabled) and in transit — including internal VNet traffic. "It's already private" is not a reason to skip TLS internally for a bank, especially for anything touching the RAG document corpus.
+- Data classification tagging on every storage account, vector store, and Key Vault touched by the change — queryable, not just documented.
+- Backup/retention explicitly defined for any new data store, with GDPR data-minimization and DORA/AI-Act evidentiary retention needs reconciled on purpose, not defaulted.
+
+## 5. Logging, monitoring, SIEM
+- Diagnostic settings on every new resource, routed to Log Analytics, tagged/queryable by stamp ID.
+- Feeds the central SIEM (not an isolated per-stamp silo).
+- If the change touches the LLM/RAG layer: retrieval-to-output pairs and rate-limit/quota-breach events routed into the same pipeline as infrastructure logs, so a cross-layer incident (e.g. prompt injection correlated with unusual egress) is investigable from one place.
+- Alerting thresholds defined for both infrastructure anomalies and application-layer anomalies — the latter needs the RAG/application owner's input, infra monitoring alone won't catch it.
+
+## 6. Defender for Cloud / CSPM
+- Defender for Cloud enabled (or confirmed tenant-wide) with plans matching the workload (Storage, Key Vault, Containers if AKS/ACA).
+- Treat Defender findings as inputs to the Terraform module, not a parallel manually-remediated checklist.
+
+## 7. Container/compute hardening (if the change touches ACA or AKS)
+- Minimal base images, no root execution, image scanning in CI before the image reaches a stamp.
+- Network Policy (AKS) or subnet/NSG-level isolation (ACA — it has no pod-to-pod equivalent, so the isolation burden sits on subnet/NSG design; see `aca-aks-decision-framework` skill).
+- Resource limits/scaling rules set per stamp capacity tier, not left unbounded.
+
+## Output format
+State findings as: control → present/absent/unverified → concrete remediation if absent or unverified. Don't restate the whole checklist for a narrow question — apply only the sections the proposed change actually touches.

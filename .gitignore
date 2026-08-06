@@ -1,0 +1,35 @@
+# Secrets (Docker secrets files) - keep the README documenting them
+secrets/*
+!secrets/README.md
+
+# Live SearXNG secret_key (see searxng/settings.yml.example for the template)
+searxng/settings.yml
+
+# Environment config (may contain local overrides)
+.env
+
+# Rendered from skills/*.md.template (scripts/render-templates.sh) — real
+# content is customer-specific. obsidian-vault-usage.md and
+# knowledge-graph-memory.md have no template counterpart and stay tracked.
+/skills/aca-aks-decision-framework.md
+/skills/bicep-terraform-migration-playbook.md
+/skills/design-decision-log.md
+/skills/devops-pipeline-review.md
+/skills/genai-ai-foundry-security-review.md
+/skills/gotchas-log.md
+/skills/raci-stakeholder-table.md
+/skills/regulatory-impact-triage.md
+/skills/zero-trust-landing-zone-review.md
+
+# Memory-server backups and ingestion logs may contain client vault content
+memory_backups/
+ingestion.log
+memory_backup.log
+
+# Claude Code local machine overrides (not shared config)
+.claude/settings.local.json
+
+# Python / OS cruft
+__pycache__/
+*.pyc
+.DS_Store

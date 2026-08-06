@@ -1,0 +1,33 @@
+Name: gotchas-log
+Description: The user's established format for logging discovered constraints, friction points, and things easily overlooked during delivery of an engagement. Use when asked to capture "gotchas," lessons learned, or things to watch out for on the {{CUSTOMER_NAME}} engagement.
+
+---
+
+# Gotchas log
+
+House style, observed in other engagements (e.g. `21. Gotchas.md`, `11. Knelpunten en gotchas.md`). Each entry follows a fixed four-part shape — don't collapse it into a flat bullet list, the structure is what makes it actionable later.
+
+## Per-entry structure
+
+```
+## N. <Short, specific title of the friction point>
+
+**What is often overlooked**
+- The specific thing people miss, as a bullet list.
+
+**Why this matters** (or **Impact** / **Typical consequence** — pick whichever fits)
+A short paragraph on the concrete downstream consequence if this isn't caught early. A one-line illustrative quote in blockquote form is welcome if it captures the friction vividly (e.g. a stakeholder objection you can anticipate).
+
+**What to anchor**
+- The specific mitigation: what to state explicitly, agree upfront, or put in a kickoff slide/conversation, so this doesn't become a problem later. Concrete and actionable, not "communicate better."
+
+---
+```
+
+Number entries sequentially. Separate each with a horizontal rule. Titles should name the actual friction point ("Scope & expectations," "Ownership & decision-making," "Data quality reality") not a generic category.
+
+## What belongs in this log vs. `design-decision-log`
+A gotcha is a **discovered risk or friction point worth anticipating** — not a settled decision (goes in `design-decision-log`) and not an open question needing a customer answer (goes in the `Q:` section of that same log). If something is both a gotcha and implies an open decision, log the gotcha here and cross-reference the specific open question in the decision log rather than duplicating it in full.
+
+## Output format
+Produce entries in the exact four-part shape above. Keep "What to anchor" genuinely actionable — a sentence someone could say in a kickoff meeting or a line that could go in a SoW, not a restatement of the problem.
