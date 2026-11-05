@@ -1,7 +1,7 @@
 fastapi==0.141.1
 uvicorn==0.34.0
 httpx==0.28.1
-python-multipart==0.0.32
+python-multipart==0.0.33
 pytest==9.1.1
 pytest-asyncio==1.4.0
 respx==0.23.1
